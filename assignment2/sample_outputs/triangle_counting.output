@@ -1,0 +1,14 @@
+Number of workers : 4
+Task decomposition strategy : 2
+Reading graph
+Created graph
+
+thread_id, num_vertices, num_edges, triangle_count, time_taken
+0, 489893, 1383303, 161925, 0.048333
+1, 488008, 1383304, 125397, 0.048666
+2, 494687, 1383304, 155054, 0.048576
+3, 498693, 1383303, 154830, 0.046842
+Number of triangles : 597206
+Number of unique triangles : 199068
+Partitioning time (in seconds) : 0.003673
+Time taken (in seconds) : 0.051610
