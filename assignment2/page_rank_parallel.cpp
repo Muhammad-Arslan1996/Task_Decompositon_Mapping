@@ -256,7 +256,7 @@ void pageRankDynamic(Graph *g, uint tid, uintV n, double *thread_time, PageRankT
        *getvertexTime += gvTimer.stop();
        if(vertices == -1)
          break;
-       for(int u = vertices; u < vertices+granularity && u < n; u++){
+       for(int u = vertices; u  < vertices+granularity && u < n; u++){
          uintE out_degree = g->vertices_[u].getOutDegree();
          for (uintE i = 0; i < out_degree; i++)
          {

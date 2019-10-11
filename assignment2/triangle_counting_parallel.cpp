@@ -44,7 +44,7 @@ uintV countTriangles(uintV *array1, uintE len1, uintV *array2, uintE len2, uintV
 }
 
 void printThreadStatistics(uint n_workers, std::thread *t, long *triangleCountEachThread, double* thread_time_taken, long* vertexCount, long* edgeCount){
-  std::cout << "thread_id, num_vertices, num_edges,triangle_count, time_taken\n";
+  std::cout << "thread_id, num_vertices, num_edges, triangle_count, time_taken\n";
   for(uint i = 0; i < n_workers; i++){
     t[i].join();
     std::cout <<i<< ", " << vertexCount[i] << ", "<< edgeCount[i] << ", "<<triangleCountEachThread[i] << ", "
@@ -210,21 +210,15 @@ void parallelStrategy2(Graph &g, uint n_workers)
   printStatistics(partitionTime, total_time_taken);
 }
 
-uintV getNextVertexToBeProcessed(uintV &sharedCurr, uintV n){
+uintV getNextVertexToBeProcessed(std::atomic <long> &sharedCurr, uintV n){
 
-  uintV current;
-  l1.lock();
   if(sharedCurr >= n){
-    l1.unlock();
     return -1;
   }
-  current = sharedCurr;
-  sharedCurr++;
-  l1.unlock();
-  return current;
+  return sharedCurr.fetch_add(1);
 }
 
-void dynamicCounting(Graph *g, uint tid, uintV n, double* thread_time, long* triangleCountEachThread, long* vertexCountThread, long* edgeCountThread, uintV* sharedCurr){
+void dynamicCounting(Graph *g, uint tid, uintV n, double* thread_time, long* triangleCountEachThread, long* vertexCountThread, long* edgeCountThread, std::atomic <long>* sharedCurr){
 
   timer thread_timer;
   thread_timer.start();
@@ -262,7 +256,8 @@ void parallelStrategy3(Graph &g, uint n_workers)
   timer partitionTimer;
   double partitionTime = 0.0;
   double total_time_taken = 0.0;
-  uintV sharedCurr = 0;
+  std::atomic <long> sharedCurr{0};
+  //std::atomic_init(&sharedCurr, 0);
   timer t1;
   double thread_time_taken[n_workers];
   for(int i =0; i< n_workers; i++){
@@ -277,7 +272,7 @@ void parallelStrategy3(Graph &g, uint n_workers)
   t1.start();
   std::thread t[n_workers];
   for(uint i = 0; i < n_workers; i++){
-    t[i] = std::thread(dynamicCounting, &g, i, n, &thread_time_taken[i], &triangleCountEachThread[i], &edgeCount[i], &vertexCount[i], &sharedCurr); // i is tid
+    t[i] = std::thread(dynamicCounting, &g, i, n, &thread_time_taken[i], &triangleCountEachThread[i], &vertexCount[i], &edgeCount[i], &sharedCurr); // i is tid
   }
   total_time_taken = t1.stop();
   printThreadStatistics(n_workers, t, triangleCountEachThread, thread_time_taken, vertexCount, edgeCount);
