@@ -9,7 +9,6 @@
 
 std::atomic <long> triangle_count;
 std::vector<uintV> vertexVec;
-std::mutex l1;
 
 uintV countTriangles(uintV *array1, uintE len1, uintV *array2, uintE len2, uintV u, uintV v)
 {
@@ -43,7 +42,9 @@ uintV countTriangles(uintV *array1, uintE len1, uintV *array2, uintE len2, uintV
     return count;
 }
 
-void printThreadStatistics(uint n_workers, std::thread *t, long *triangleCountEachThread, double* thread_time_taken, long* vertexCount, long* edgeCount){
+void printThreadStatistics(uint n_workers, std::thread *t, long *triangleCountEachThread,
+  std::vector<double> &thread_time_taken, std::vector<long> &vertexCount, std::vector<long> &edgeCount){
+
   std::cout << "thread_id, num_vertices, num_edges, triangle_count, time_taken\n";
   for(uint i = 0; i < n_workers; i++){
     t[i].join();
@@ -59,79 +60,8 @@ void printStatistics(double partitioning_time, double total_time_taken){
   std::cout << "Partitioning time (in seconds) : " << std::setprecision(TIME_PRECISION) << partitioning_time << "\n";
   std::cout << "Time taken (in seconds) : " << std::setprecision(TIME_PRECISION) << total_time_taken << "\n";
 }
-
-void processVertex(Graph *g, uintV start, uintV end, uint tid, double* thread_time, long* triangleCountEachThread, long* edgeCountThread){
-  timer thread_timer;
-  thread_timer.start();
-  long edgeCount = 0;
-  long local_triangle_count = 0;
-  for (uintV u = start; u < end; u++)
-  {
-      // For each outNeighbor v, find the intersection of inNeighbor(u) and outNeighbor(v)
-      uintE out_degree = g->vertices_[u].getOutDegree();
-      for (uintE i = 0; i < out_degree; i++)
-      {
-        uintV v = g->vertices_[u].getOutNeighbor(i);
-        edgeCount++;
-        local_triangle_count += countTriangles(g->vertices_[u].getInNeighbors(),
-                                              g->vertices_[u].getInDegree(),
-                                              g->vertices_[v].getOutNeighbors(),
-                                              g->vertices_[v].getOutDegree(),
-                                              u,
-                                              v);
-      }
-  }
-  *triangleCountEachThread = local_triangle_count;
-  *edgeCountThread = edgeCount;
-  triangle_count.fetch_add(local_triangle_count);
-  *thread_time = thread_timer.stop();
-
-}
-
-
-void parallelStrategy1(Graph &g, uint n_workers)
-{
-  uintV n = g.n_;
-  double total_time_taken = 0.0;
-  timer t1;
-  timer partitionTimer;
-  double thread_time_taken[n_workers];
-  for(int i =0; i< n_workers; i++){
-    thread_time_taken[i] = 0.0;
-  }
-  long triangleCountEachThread[n_workers];
-  long vertexCount[n_workers];
-  long edgeCount[n_workers];
-  double partitionTime = 0.0;
-  uintV start;
-  uintV end;
-
-  t1.start();
-
-  std::thread t[n_workers];
-  // Vertex Based Decomposition <u,v>
-  for(uint i = 0; i < n_workers - 1; i++){
-    partitionTimer.start();
-    start = (n/n_workers)*i;
-    end = ((i+1)*(n/n_workers));
-    partitionTime += partitionTimer.stop();
-    vertexCount[i] = end-start;
-    t[i] = std::thread(processVertex, &g, start, end, i, &thread_time_taken[i], &triangleCountEachThread[i], &edgeCount[i]); // i is tid
-  }
-  partitionTimer.start();
-  start = n/n_workers*(n_workers-1);
-  end = n;
-  partitionTime += partitionTimer.stop();
-  vertexCount[n_workers -1] = end-start;
-  t[n_workers -1] = std::thread(processVertex, &g, start, end, n_workers -1, &thread_time_taken[n_workers-1], &triangleCountEachThread[n_workers-1], &edgeCount[n_workers-1]);
-
-
-  printThreadStatistics(n_workers, t, triangleCountEachThread, thread_time_taken, vertexCount, edgeCount);
-  total_time_taken = t1.stop();
-  printStatistics(partitionTime, total_time_taken);
-}
-
-void processEdge(Graph *g, uintE start, uintE end, uint tid, double* thread_time, long* triangleCountEachThread, std::vector<std::pair<uintV,uintV>> edgesVector){
+void processEdge(Graph *g, uintE start, uintE end, uint tid, double* thread_time,
+  long* triangleCountEachThread, std::vector<std::pair<uintV,uintV>> edgesVector){
 
   timer thread_timer;
   thread_timer.start();
@@ -163,48 +93,88 @@ void getEdges(Graph *g, std::vector<std::pair<uintV,uintV>> &edgesVector, uintV 
     }
   }
 }
-
-void parallelStrategy2(Graph &g, uint n_workers)
-{
-  uintV n = g.n_;
-  timer partitionTimer;
-  double partitionTime = 0.0;
-  double total_time_taken = 0.0;
-  timer t1;
-  double thread_time_taken[n_workers];
-  for(int i =0; i< n_workers; i++){
-    thread_time_taken[i] = 0.0;
+void processVertex(Graph *g, uintV start, uintV end, uint tid, double* thread_time,
+  long* triangleCountEachThread, long* edgeCountThread, long* vertexCountThread){
+  timer thread_timer;
+  thread_timer.start();
+  long edgeCount = 0;
+  long vertexCount = 0;
+  long local_triangle_count = 0;
+  //std::cout << "edgeCountThread1: " << *edgeCountThread << "\n";
+  for (uintV u = start; u < end; u++)
+  {
+      // For each outNeighbor v, find the intersection of inNeighbor(u) and outNeighbor(v)
+      vertexCount++;
+      uintE out_degree = g->vertices_[u].getOutDegree();
+      for (uintE i = 0; i < out_degree; i++)
+      {
+        uintV v = g->vertices_[u].getOutNeighbor(i);
+        edgeCount++;
+        local_triangle_count += countTriangles(g->vertices_[u].getInNeighbors(),
+                                              g->vertices_[u].getInDegree(),
+                                              g->vertices_[v].getOutNeighbors(),
+                                              g->vertices_[v].getOutDegree(),
+                                              u,
+                                              v);
+      }
   }
-  uintV start;
-  uintV end;
-  long triangleCountEachThread[n_workers];
-  long vertexCount[n_workers];
-  long edgeCount [n_workers];
+  *triangleCountEachThread = local_triangle_count;
+  *edgeCountThread = edgeCount;
+  *vertexCountThread = vertexCount;
+  triangle_count.fetch_add(local_triangle_count);
+  *thread_time = thread_timer.stop();
 
-  t1.start();
-  std::thread t[n_workers];
-  std::vector<std::pair<uintV,uintV>> edgesVector;
-  getEdges(&g ,edgesVector, n);
-  uintE totalEdges = edgesVector.size();
+}
+
+void getStartEndVertices(uintV *start, uintV *end, uintV n, uint n_workers){
 
   for(uint i = 0; i < n_workers - 1; i++){
-    partitionTimer.start();
-    start = (totalEdges/n_workers)*i;
-    end = ((i+1)*(totalEdges/n_workers));
-    edgeCount[i] = end -start;
-    vertexCount[i] = 0;
-    partitionTime += partitionTimer.stop();
-    t[i] = std::thread(processEdge, &g, start, end, i, &thread_time_taken[i], &triangleCountEachThread[i], edgesVector); // i is tid
+    start[i] = (n/n_workers)*i;
+    end[i] = ((i+1)*(n/n_workers));
   }
-  partitionTimer.start();
-  start = totalEdges/n_workers*(n_workers-1);
-  end = totalEdges;
-  vertexCount[n_workers -1] = 0;
-  edgeCount[n_workers - 1] = end - start;
-  partitionTime += partitionTimer.stop();
-  t[n_workers -1] = std::thread(processEdge, &g, start, end, n_workers -1, &thread_time_taken[n_workers-1], &triangleCountEachThread[n_workers-1], edgesVector);
+  start[n_workers-1] = n/n_workers*(n_workers-1);
+  end[n_workers-1] = n;
 
-  total_time_taken = t1.stop();
+}
+
+void triangleCountingParallel(Graph &g, uint n_workers, int strategy)
+{
+  uintV n = g.n_;
+  double total_time_taken = 0.0;
+  timer t1;
+  timer partitionTimer;
+  long triangleCountEachThread[n_workers];
+  std::vector<double> thread_time_taken(n_workers,0);
+  std::vector<long> vertexCount(n_workers,0);
+  std::vector<long> edgeCount(n_workers, 0);
+  double partitionTime = 0.0;
+  uintV start[n_workers];
+  uintV end[n_workers];
+  std::thread t[n_workers];
+
+  t1.start();
+  if(strategy == 1){
+    partitionTimer.start();
+    getStartEndVertices(start, end, n, n_workers);
+    partitionTime = partitionTimer.stop();
+    for(uint i = 0; i < n_workers; i++){
+      t[i] = std::thread(processVertex, &g, start[i], end[i], i, &thread_time_taken[i], &triangleCountEachThread[i], &edgeCount[i], &vertexCount[i]); // i is tid
+    }
+  }
+
+  if(strategy == 2){
+    std::vector<std::pair<uintV,uintV>> edgesVector;
+    partitionTimer.start();
+    getEdges(&g ,edgesVector, n);
+    uintE totalEdges = edgesVector.size();
+    getStartEndVertices(start, end, totalEdges, n_workers);
+    partitionTime = partitionTimer.stop();
+    for(uint i = 0; i < n_workers; i++){
+      edgeCount[i] = end[i] - start[i];
+      t[i] = std::thread(processEdge, &g, start[i], end[i], i, &thread_time_taken[i], &triangleCountEachThread[i], edgesVector);
+    }
+  }
+
   printThreadStatistics(n_workers, t, triangleCountEachThread, thread_time_taken, vertexCount, edgeCount);
   total_time_taken = t1.stop();
   printStatistics(partitionTime, total_time_taken);
@@ -218,15 +188,21 @@ uintV getNextVertexToBeProcessed(std::atomic <long> &sharedCurr, uintV n){
   return sharedCurr.fetch_add(1);
 }
 
-void dynamicCounting(Graph *g, uint tid, uintV n, double* thread_time, long* triangleCountEachThread, long* vertexCountThread, long* edgeCountThread, std::atomic <long>* sharedCurr){
+void dynamicCounting(Graph *g, uint tid, uintV n, double* thread_time,
+  long* triangleCountEachThread, long* vertexCountThread, long* edgeCountThread,
+  std::atomic <long>* sharedCurr, double* partitionTime){
 
   timer thread_timer;
   thread_timer.start();
+  timer partitionTimer;
   long local_triangle_count = 0;
   long edgeCount = 0;
   long vertexCount = 0;
   while(true){
+
+    partitionTimer.start();
     uintV u = getNextVertexToBeProcessed(*sharedCurr, n);
+    *partitionTime += partitionTimer.stop();
     if(u == -1)
       break;
     vertexCount ++;
@@ -253,28 +229,20 @@ void dynamicCounting(Graph *g, uint tid, uintV n, double* thread_time, long* tri
 void parallelStrategy3(Graph &g, uint n_workers)
 {
   uintV n = g.n_;
-  timer partitionTimer;
   double partitionTime = 0.0;
   double total_time_taken = 0.0;
   std::atomic <long> sharedCurr{0};
-  //std::atomic_init(&sharedCurr, 0);
   timer t1;
-  double thread_time_taken[n_workers];
-  for(int i =0; i< n_workers; i++){
-    thread_time_taken[i] = 0.0;
-  }
-  uintV start;
-  uintV end;
+  std::vector<double> thread_time_taken(n_workers,0);
+  std::vector<long> vertexCount(n_workers,0);
+  std::vector<long> edgeCount(n_workers, 0);
   long triangleCountEachThread[n_workers];
-  long vertexCount[n_workers];
-  long edgeCount [n_workers];
 
   t1.start();
   std::thread t[n_workers];
   for(uint i = 0; i < n_workers; i++){
-    t[i] = std::thread(dynamicCounting, &g, i, n, &thread_time_taken[i], &triangleCountEachThread[i], &vertexCount[i], &edgeCount[i], &sharedCurr); // i is tid
+    t[i] = std::thread(dynamicCounting, &g, i, n, &thread_time_taken[i], &triangleCountEachThread[i], &vertexCount[i], &edgeCount[i], &sharedCurr, &partitionTime); // i is tid
   }
-  total_time_taken = t1.stop();
   printThreadStatistics(n_workers, t, triangleCountEachThread, thread_time_taken, vertexCount, edgeCount);
   total_time_taken = t1.stop();
   printStatistics(partitionTime, total_time_taken);
@@ -338,11 +306,11 @@ int main(int argc, char *argv[])
         break;
     case 1:
         std::cout << "\nVertex-based work partitioning\n";
-        parallelStrategy1(g, n_workers);
+        triangleCountingParallel(g, n_workers, 1);
         break;
     case 2:
         std::cout << "\nEdge-based work partitioning\n";
-        parallelStrategy2(g, n_workers);
+        triangleCountingParallel(g, n_workers, 2);
         break;
     case 3:
         std::cout << "\nDynamic work partitioning\n";
